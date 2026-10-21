@@ -1,0 +1,33 @@
+# Binaries (convention: local builds use the .out suffix)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.out
+/gobuzzkey
+/dist/
+
+# Test artifacts
+*.test
+coverage.*
+*.coverprofile
+reports/
+testdata/fuzz/**/*.tmp
+
+# Agent identities: secret by definition. Never commit one.
+*.env
+!.env.example
+buzz-agent.json
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editors and agents (the AGENTS.md symlink is shared)
+.DS_Store
+.idea/
+.claude/*
+!.claude/CLAUDE.md
+.cursor/
+.worktrees/

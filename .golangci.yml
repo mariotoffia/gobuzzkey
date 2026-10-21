@@ -1,0 +1,190 @@
+# golangci-lint configuration for gobuzzkey.
+#
+# Enforces the file- and symbol-level rules go-arch-lint cannot express.
+# depguard deliberately overlaps .go-arch-lint.yml on the Dependency Rule, so
+# a violation has to defeat both to slip through. LINT.md maps every failure
+# to its fix.
+
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - errorlint
+    - forbidigo
+    - gochecknoglobals
+    - gochecknoinits
+    - interfacebloat
+    - ireturn
+    - misspell
+    - nolintlint
+    - revive
+    - wrapcheck
+
+  settings:
+    # Accept interfaces, return concrete types. No project interface is a
+    # sanctioned return type; add one only with a comment saying why.
+    ireturn:
+      allow:
+        - error
+        - empty
+        - anon
+        - stdlib
+        - generic
+
+    # Ports stay small (interface segregation).
+    interfacebloat:
+      max: 4
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # Time is injected (domain/clock). Exempt: domain/clock/real.go, tests.
+        - pattern: '^time\.(Now|Since|Until|Sleep|After|Tick|NewTimer|NewTicker)$'
+          msg: "inject domain/clock.Clock and call clk.Now()"
+        # The environment is read at the composition root only.
+        - pattern: '^os\.(Getenv|LookupEnv|Environ)$'
+          msg: "read the environment in cmd/gobuzzkey and pass the value in"
+        # Output goes to an injected io.Writer, never straight to stdout, so a
+        # secret can only reach the terminal through code that chose to print it.
+        - pattern: '^(fmt\.Print(f|ln)?|print|println)$'
+          msg: "write to an injected io.Writer"
+        # Revealing a secret key is confined to the identity store.
+        - pattern: '^key\.SecretKey\.(Nsec|Bytes)$'
+          pkg: '^github\.com/mariotoffia/gobuzzkey/domain/key$'
+          msg: "only adapters/store/envfile and adapters/crypto/secp256k1 may reveal a secret key"
+
+    depguard:
+      rules:
+        # Layer 1 is pure: stdlib only, and no I/O packages.
+        domain:
+          list-mode: lax
+          files:
+            - "**/domain/**/*.go"
+            - "!$test"
+          deny:
+            - pkg: "github.com/mariotoffia/gobuzzkey/ports"
+              desc: "domain must not depend on ports"
+            - pkg: "github.com/mariotoffia/gobuzzkey/app"
+              desc: "domain must not depend on app"
+            - pkg: "github.com/mariotoffia/gobuzzkey/adapters"
+              desc: "domain must not depend on adapters"
+            - pkg: "github.com/mariotoffia/gobuzzkey/cmd"
+              desc: "domain must not depend on the composition root"
+            - pkg: "github.com/btcsuite"
+              desc: "domain is stdlib-only; signing goes through ports.Signer"
+            - pkg: "golang.org/x"
+              desc: "domain is stdlib-only"
+            - pkg: "net/http"
+              desc: "domain does no I/O"
+            - pkg: "os"
+              desc: "domain does no I/O"
+
+        ports:
+          list-mode: lax
+          files:
+            - "**/ports/**/*.go"
+          deny:
+            - pkg: "github.com/mariotoffia/gobuzzkey/app"
+              desc: "ports must not depend on app"
+            - pkg: "github.com/mariotoffia/gobuzzkey/adapters"
+              desc: "ports must not depend on adapters"
+            - pkg: "net/http"
+              desc: "ports must not leak transport types"
+            - pkg: "github.com/btcsuite"
+              desc: "ports must not leak library types"
+
+        app:
+          list-mode: lax
+          files:
+            - "**/app/**/*.go"
+            - "!$test"
+          deny:
+            - pkg: "github.com/mariotoffia/gobuzzkey/adapters"
+              desc: "app reaches adapters only through ports"
+            - pkg: "github.com/mariotoffia/gobuzzkey/cmd"
+              desc: "app must not depend on the composition root"
+            - pkg: "net/http"
+              desc: "app does no I/O; use ports.Relay"
+            - pkg: "os"
+              desc: "app does no I/O; use a port"
+
+        adapters:
+          list-mode: lax
+          files:
+            - "**/adapters/**/*.go"
+            - "!$test"
+          deny:
+            - pkg: "github.com/mariotoffia/gobuzzkey/app"
+              desc: "adapters implement ports; they never call use cases"
+            - pkg: "github.com/mariotoffia/gobuzzkey/cmd"
+              desc: "adapters must not depend on the composition root"
+
+        # Anti-corruption layer: a library is imported only from acl_*.go in
+        # its own adapter.
+        btcec:
+          list-mode: lax
+          files:
+            - "**/*.go"
+            - "!**/adapters/crypto/secp256k1/acl_*.go"
+          deny:
+            - pkg: "github.com/btcsuite"
+              desc: "btcec is imported only in adapters/crypto/secp256k1/acl_*.go"
+        xterm:
+          list-mode: lax
+          files:
+            - "**/*.go"
+            - "!**/adapters/secret/terminal/acl_*.go"
+          deny:
+            - pkg: "golang.org/x/term"
+              desc: "x/term is imported only in adapters/secret/terminal/acl_*.go"
+
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Err()
+      # Every package of this module returns classified shared.Error values;
+      # forwarding them unwrapped keeps the Code visible.
+      ignore-package-globs:
+        - github.com/mariotoffia/gobuzzkey/**
+
+    revive:
+      rules:
+        - name: max-public-structs
+          arguments: [12]
+        - name: cognitive-complexity
+          arguments: [20]
+        - name: cyclomatic
+          arguments: [15]
+        - name: empty-block
+        - name: unused-parameter
+        - name: unexported-return
+
+  exclusions:
+    rules:
+      # The wall clock itself.
+      - linters: [forbidigo]
+        path: "domain/clock/real\\.go$"
+        text: "inject domain/clock"
+      # The composition root reads the environment; tests may too.
+      - linters: [forbidigo]
+        path: "(^|/)cmd/gobuzzkey/main\\.go$"
+        text: "read the environment"
+      # Tests and test infrastructure use real time, the environment and secrets.
+      - linters: [forbidigo, gochecknoglobals, wrapcheck, revive, ireturn]
+        path: "_test\\.go$"
+      - linters: [forbidigo, revive]
+        path: "^testutil/"
+      # The definition site, and the two adapters whose job is to hold or
+      # serialize a secret key.
+      - linters: [forbidigo]
+        path: "^(domain/key|adapters/store/envfile|adapters/crypto/secp256k1)/"
+        text: "may reveal a secret key"

@@ -1,0 +1,102 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: 'Per-target fuzzing duration for the fuzz job (e.g. 1m, 10m)'
+        required: false
+        default: '2m'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install pinned lint tooling
+        run: make install
+
+      - name: Run all static checks
+        run: make lint
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lint-reports
+          path: reports/
+          if-no-files-found: ignore
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make build
+
+      - name: Unit tests (race)
+        run: make test
+
+      - name: Vulnerability check (pinned govulncheck)
+        run: make vulncheck
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-reports
+          path: reports/
+          if-no-files-found: ignore
+
+  # Mutation fuzzing on demand. The seed corpora already run in every `make
+  # test`; this job mutates them. Crashers are uploaded so they can be
+  # committed under testdata/fuzz/ as new seeds together with the fix.
+  fuzz:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Mutate every fuzz target
+        run: make fuzz FUZZTIME=${{ inputs.fuzztime || '2m' }}
+
+      - name: Upload fuzz report and any crashers
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-reports
+          path: |
+            reports/fuzz.log
+            **/testdata/fuzz/**
+          if-no-files-found: ignore

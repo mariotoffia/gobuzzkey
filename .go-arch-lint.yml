@@ -1,0 +1,169 @@
+version: 3
+workdir: .
+
+# ============================================================================
+# gobuzzkey architecture policy
+#
+# The machine-checked form of the layering in ARCHITECTURE.md §2:
+#
+#   * Clean Architecture -- dependencies point inward only.
+#   * Hexagonal Architecture -- the core (domain + app) talks to the outside
+#     world only through the interfaces in ports/; adapters implement them.
+#   * Domain-Driven Design -- domain/ is pure: stdlib only, no I/O, no crypto
+#     library. Every bounded context is its own component (DDD.md §1).
+#
+# Each component is an architectural role, not a convenience bucket. If this
+# file and the code disagree, the code is wrong (AGENTS.md).
+# ============================================================================
+
+allow:
+  # Every external module must be opted into explicitly with canUse.
+  depOnAnyVendor: false
+  # Detect leaks through method calls and structural typing, not only imports.
+  deepScan: true
+  ignoreNotFoundComponents: false
+
+exclude:
+  - .git
+  - .github
+  - .vscode
+  - docs
+  - reports
+  - scripts
+  # Test infrastructure, not production code.
+  - domain/clock/clocktest
+  - testutil
+  - tests
+
+excludeFiles:
+  - "^.*_test\\.go$"
+
+# ============================================================================
+# Components
+#
+#   Layer 1 -- Domain (stdlib only)
+#       domain_shared       -- shared kernel: Error, Code
+#       domain_clock        -- time abstraction
+#       domain_key          -- PublicKey, SecretKey, Signature, bech32
+#       domain_attestation  -- NIP-OA Conditions, AuthTag, Attestation (core)
+#       domain_nostr        -- NIP-01 events and filters, NIP-98 tags
+#       domain_relay        -- relay URL, channels, write results
+#       domain_identity     -- AgentIdentity aggregate (core)
+#
+#   Layer 2 -- Ports and application
+#       ports               -- interfaces the core needs from the world
+#       app                 -- use cases: mint, inspect, check
+#
+#   Layer 3 -- Adapters (one per technology, never importing each other)
+#       adapter_crypto_secp256k1  -- BIP-340 via btcec
+#       adapter_relay_buzzhttp    -- Buzz REST API over net/http with NIP-98
+#       adapter_store_envfile     -- env / JSON identity files
+#       adapter_secret_terminal   -- owner secret from prompt, pipe or preset
+#
+#   Layer 4 -- Composition root
+#       cmd                 -- flags, environment, wiring, output
+# ============================================================================
+
+components:
+  domain_shared: { in: [domain/shared] }
+  domain_clock: { in: [domain/clock] }
+  domain_key: { in: [domain/key] }
+  domain_attestation: { in: [domain/attestation] }
+  domain_nostr: { in: [domain/nostr] }
+  domain_relay: { in: [domain/relay] }
+  domain_identity: { in: [domain/identity] }
+
+  ports: { in: [ports] }
+  app: { in: [app] }
+
+  adapter_crypto_secp256k1: { in: [adapters/crypto/secp256k1] }
+  adapter_relay_buzzhttp: { in: [adapters/relay/buzzhttp] }
+  adapter_store_envfile: { in: [adapters/store/envfile] }
+  adapter_secret_terminal: { in: [adapters/secret/terminal] }
+
+  cmd: { in: [cmd/gobuzzkey] }
+
+vendors:
+  # Matches no real import path. A component that lists only this sentinel
+  # makes its zero-external-dependency claim machine-checked.
+  _no_external_deps_: { in: __no_external_deps_sentinel__ }
+
+  # BIP-340 Schnorr over secp256k1. Confined to the crypto adapter, and within
+  # it to acl_*.go (.golangci.yml depguard "btcec").
+  btcec: { in: [github.com/btcsuite/btcd/btcec/v2, github.com/btcsuite/btcd/btcec/v2/**] }
+
+  # Hidden terminal input. Confined to the terminal adapter's acl_*.go.
+  x_term: { in: golang.org/x/term }
+
+deps:
+  # ---- Layer 1: Domain ----
+  domain_shared:
+    canUse: [_no_external_deps_]
+  domain_clock:
+    canUse: [_no_external_deps_]
+  domain_key:
+    mayDependOn: [domain_shared]
+    canUse: [_no_external_deps_]
+  domain_attestation:
+    mayDependOn: [domain_shared, domain_key]
+    canUse: [_no_external_deps_]
+  domain_nostr:
+    mayDependOn: [domain_shared, domain_key]
+    canUse: [_no_external_deps_]
+  domain_relay:
+    mayDependOn: [domain_shared, domain_nostr]
+    canUse: [_no_external_deps_]
+  domain_identity:
+    mayDependOn: [domain_shared, domain_key, domain_attestation, domain_relay]
+    canUse: [_no_external_deps_]
+
+  # ---- Layer 2: Ports and application ----
+  ports:
+    mayDependOn: [domain_key, domain_nostr, domain_relay, domain_identity]
+    canUse: [_no_external_deps_]
+  app:
+    mayDependOn:
+      - domain_shared
+      - domain_clock
+      - domain_key
+      - domain_attestation
+      - domain_nostr
+      - domain_relay
+      - domain_identity
+      - ports
+    canUse: [_no_external_deps_]
+
+  # ---- Layer 3: Adapters ----
+  adapter_crypto_secp256k1:
+    mayDependOn: [domain_shared, domain_key, ports]
+    canUse: [btcec]
+  adapter_relay_buzzhttp:
+    mayDependOn:
+      - domain_shared
+      - domain_clock
+      - domain_attestation
+      - domain_identity
+      - domain_nostr
+      - domain_relay
+      - ports
+    canUse: [_no_external_deps_]
+  adapter_store_envfile:
+    mayDependOn: [domain_shared, domain_attestation, domain_identity, ports]
+    canUse: [_no_external_deps_]
+  adapter_secret_terminal:
+    mayDependOn: [domain_shared, domain_key, ports]
+    canUse: [x_term]
+
+  # ---- Layer 4: Composition root ----
+  cmd:
+    mayDependOn:
+      - domain_shared
+      - domain_clock
+      - domain_key
+      - domain_identity
+      - app
+      - adapter_crypto_secp256k1
+      - adapter_relay_buzzhttp
+      - adapter_store_envfile
+      - adapter_secret_terminal
+    canUse: [_no_external_deps_]

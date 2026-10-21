@@ -1,0 +1,18 @@
+{
+  "go.testTimeout": "2m",
+  "go.lintTool": "golangci-lint",
+  "go.lintFlags": ["--fast-only"],
+  "go.diagnostic.vulncheck": "Imports",
+  "cSpell.words": [
+    "bech32",
+    "btcec",
+    "Buzz",
+    "gobuzzkey",
+    "mariotoffia",
+    "npub",
+    "nsec",
+    "Nostr",
+    "schnorr",
+    "secp256k1"
+  ]
+}
