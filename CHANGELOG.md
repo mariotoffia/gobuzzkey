@@ -12,14 +12,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 - `gobuzzkey new -channel <name>` joins the channel as the agent and reads it,
   so one command sets up an agent. A private channel cannot be joined by the
   agent itself; `new` prints the npub to add in Buzz Desktop.
-- `new` writes `buzz-agent.grok.txt` next to the identity: the whole message to
-  paste into a Grok Bot chat, with the three variables filled in and the
-  polling routine. It holds the agent key and has mode 0600. The MCP server
-  it installs is pinned to a reviewed buzz-grokbot commit.
+- `new` ends by printing the whole prompt to paste into a Grok Bot chat,
+  between ``` fences, with the three variables filled in and the polling
+  routine. It holds the agent key. The MCP server it installs is pinned to a
+  reviewed buzz-grokbot commit.
 - When the relay refuses the agent, `new` prints what the relay admin has to
   change, with the owner and agent npubs filled in.
 - `gobuzzkey remove [-channel <name>]` takes the agent out of the channel and
-  deletes the identity file and its Grok Bot message.
+  deletes the identity file.
 - `-expires` accepts years, such as `5y`.
 - The owner-key prompt, and the error when the key is missing or invalid, say
   where to find it: Buzz Desktop, Settings, Profile, Private key.

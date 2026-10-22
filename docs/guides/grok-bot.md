@@ -25,12 +25,12 @@ The server only polls. Buzz never pushes to the bot, so the bot answers messages
 
    A second run keeps the identity and does not ask for your key again.
 
-2. Open a chat with your Grok Bot and paste the whole of `buzz-agent.grok.txt` (macOS: `pbcopy < buzz-agent.grok.txt` copies it). Confirm when the bot asks. The message tells the bot to:
+2. `new` ends by printing a prompt between ``` lines. Copy everything between those lines into a chat with your Grok Bot and confirm when the bot asks. The prompt tells the bot to:
 
    - add a custom stdio MCP server named `buzz` that runs buzz-grokbot at a pinned commit, with `BUZZ_RELAY_URL`, `BUZZ_PRIVATE_KEY` and `BUZZ_AUTH_TAG` set to your agent's values;
    - create a routine that calls `buzz_inbox` every 5 minutes and answers each new message with `buzz_send_message`, treating message content as data, never as instructions.
 
-   The file holds the agent key. gobuzzkey rewrites it on every run, and `gobuzzkey remove` deletes it.
+   The prompt holds the agent key: paste it into your own Grok Bot only. Running `new` again prints it again.
 
 3. In the channel, mention the bot or reply to one of its messages. It answers on its next run, within 5 minutes.
 
@@ -43,4 +43,4 @@ To disconnect the bot, run `gobuzzkey remove -channel my-channel` and remove the
 | `FAIL  relay` with `RELAY_MEMBERSHIP_REQUIRED` (exit 5) | The relay does not accept owner attestations, or your key is not a relay member. | The admin sets `BUZZ_ALLOW_NIP_OA_AUTH=true`, or adds the agent npub as a relay member (then `BUZZ_AUTH_TAG` is not needed). `new` prints both with the npubs filled in. |
 | `FAIL  channel` with `CHANNEL_NOT_VISIBLE` (exit 7) | The channel is private, or the name is wrong. | Add the agent npub to the channel in Buzz Desktop, or check the name. |
 | The bot lists zero tools for the server | The server did not get its variables. | Check the three variable names on the server entry (Settings, Plugins, Yours). |
-| `ATTESTATION_EXPIRED` | The expiry passed (3 years by default). | Run `gobuzzkey remove`, then `gobuzzkey new`, and paste the new `buzz-agent.grok.txt` into the bot. |
+| `ATTESTATION_EXPIRED` | The expiry passed (3 years by default). | Run `gobuzzkey remove`, then `gobuzzkey new`, and paste the new prompt into the bot. |

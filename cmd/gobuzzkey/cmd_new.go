@@ -30,7 +30,7 @@ func cmdNew(ctx context.Context, e env) error {
 	fs.SetOutput(e.stderr)
 	relayURL := fs.String("relay", "", "Buzz relay URL (ws, wss, http or https)")
 	channel := fs.String("channel", "", "channel name or ID the agent joins and reads")
-	out := fs.String("out", defaultIdentityPath, `identity file; kept when it exists. "-" writes to stdout`)
+	out := fs.String("out", defaultIdentityPath, `identity file; kept when it exists. "-" writes it to stdout, without the Grok Bot prompt`)
 	format := fs.String("format", string(envfile.FormatEnv), "identity format: env or json")
 	expires := fs.String("expires", defaultExpiry, "expiry of a new identity: YYYY-MM-DD (00:00 UTC), RFC 3339, or a duration such as 3y, 90d or 36h")
 	fs.Usage = func() {
@@ -39,9 +39,9 @@ func cmdNew(ctx context.Context, e env) error {
 			"  1. creates the identity in -out, or keeps the one already there. A new one\n"+
 			"     needs your (the owner's) key, read from a hidden prompt, piped stdin or\n"+
 			"     $%s, used once and never stored;\n"+
-			"  2. writes the Grok Bot setup message next to the identity file;\n"+
-			"  3. checks that the relay admits the agent;\n"+
-			"  4. joins -channel (open channels only) and reads it.\n\nFlags:\n", envOwnerSecret)
+			"  2. checks that the relay admits the agent;\n"+
+			"  3. joins -channel (open channels only) and reads it;\n"+
+			"  4. prints the prompt to paste into a Grok Bot chat.\n\nFlags:\n", envOwnerSecret)
 		fs.PrintDefaults()
 	}
 	if err := parseFlags(fs, e.args); err != nil {
@@ -73,12 +73,14 @@ func cmdNew(ctx context.Context, e env) error {
 	if err != nil {
 		return err
 	}
-	grok, err := writeGrok(ctx, w, *out, id)
-	if err != nil {
-		return err
-	}
 	err = enroll(ctx, w, crypto, e.clock, id, *channel)
-	printNext(w, id, *channel, grok, err)
+	printNext(w, id, *channel, err)
+	// With "-out -" the identity itself is on stdout, headed for a pipe.
+	if *out != envfile.Stdout {
+		if perr := printGrok(ctx, w, id, err); perr != nil {
+			return perr
+		}
+	}
 	if err != nil {
 		return explained{err}
 	}

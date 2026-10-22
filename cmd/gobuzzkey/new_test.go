@@ -26,6 +26,18 @@ func nipoaRelay(t *testing.T, owner key.PublicKey) *fakerelay.Relay {
 	return r
 }
 
+// grokPrompt splits new's output into the fenced Grok Bot prompt and
+// everything outside it.
+func grokPrompt(t *testing.T, out string) (prompt, outside string) {
+	t.Helper()
+	before, rest, ok := strings.Cut(out, "```\n")
+	prompt, after, ok2 := strings.Cut(rest, "```\n")
+	if !ok || !ok2 || !strings.HasPrefix(prompt, "Add a custom MCP server") {
+		t.Fatalf("no fenced Grok Bot prompt in:\n%s", out)
+	}
+	return prompt, before + after
+}
+
 func writes(r *fakerelay.Relay) int {
 	n := 0
 	for _, req := range r.Requests() {
@@ -46,13 +58,14 @@ func TestNew_OneCommandMintsJoinsAnOpenChannelAndChecks(t *testing.T) {
 	if res.code != exitOK {
 		t.Fatalf("new: %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
-	for _, want := range []string{"ok    identity  created " + path, "ok    relay", "ok    channel   joined teos-grok", "ok    check     read 0", "buzz-agent.grok.txt"} {
+	for _, want := range []string{"ok    identity  created " + path, "ok    relay", "ok    channel   joined teos-grok", "ok    check     read 0"} {
 		if !strings.Contains(res.stdout, want) {
 			t.Errorf("output lacks %q:\n%s", want, res.stdout)
 		}
 	}
-	if strings.Contains(res.stdout+res.stderr, "nsec1") {
-		t.Fatalf("a secret key reached the terminal:\n%s", res.stdout)
+	prompt, outside := grokPrompt(t, res.stdout)
+	if strings.Contains(outside+res.stderr, "nsec1") {
+		t.Fatalf("a secret key was printed outside the Grok Bot prompt:\n%s", res.stdout)
 	}
 	agent := agentOf(t, path)
 	if !slices.Contains(r.Members("c-1"), agent) {
@@ -64,18 +77,13 @@ func TestNew_OneCommandMintsJoinsAnOpenChannelAndChecks(t *testing.T) {
 	if !strings.Contains(string(env), "# expires "+wantExpiry) {
 		t.Fatalf("default expiry is not 3 years:\n%s", env)
 	}
-	grok := filepath.Join(dir, "buzz-agent.grok.txt")
-	msg, err := os.ReadFile(grok)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info, _ := os.Stat(grok); info.Mode().Perm() != 0o600 {
-		t.Fatalf("grok message mode = %v", info.Mode().Perm())
-	}
 	for _, line := range strings.Split(string(env), "\n") {
-		if v, ok := strings.CutPrefix(line, "BUZZ_PRIVATE_KEY="); ok && !strings.Contains(string(msg), "BUZZ_PRIVATE_KEY = "+v+"\n") {
-			t.Fatalf("grok message does not carry the identity's key:\n%s", msg)
+		if v, ok := strings.CutPrefix(line, "BUZZ_PRIVATE_KEY="); ok && !strings.Contains(prompt, "BUZZ_PRIVATE_KEY = "+v+"\n") {
+			t.Fatalf("Grok Bot prompt does not carry the identity's key:\n%s", prompt)
 		}
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("new wrote more than the identity file: %v", entries)
 	}
 }
 
@@ -114,7 +122,8 @@ func TestNew_PrivateChannelExplainsHowToAddTheAgent(t *testing.T) {
 		t.Fatalf("new: %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
 	agent := agentOf(t, path)
-	for _, want := range []string{"FAIL  channel", "Buzz Desktop", agent.Npub(), "buzz-agent.grok.txt"} {
+	grokPrompt(t, res.stdout)
+	for _, want := range []string{"FAIL  channel", "Buzz Desktop", agent.Npub()} {
 		if !strings.Contains(res.stdout, want) {
 			t.Errorf("output lacks %q:\n%s", want, res.stdout)
 		}
@@ -134,7 +143,8 @@ func TestNew_RelayWithoutNIPOAPrintsWhatTheAdminMustDo(t *testing.T) {
 	if res.code != exitAdmission {
 		t.Fatalf("new: %d\n%s%s", res.code, res.stdout, res.stderr)
 	}
-	for _, want := range []string{"FAIL  relay", "BUZZ_ALLOW_NIP_OA_AUTH=true", ownerPub.Npub(), agentOf(t, path).Npub(), "buzz-agent.grok.txt"} {
+	grokPrompt(t, res.stdout)
+	for _, want := range []string{"FAIL  relay", "BUZZ_ALLOW_NIP_OA_AUTH=true", ownerPub.Npub(), agentOf(t, path).Npub()} {
 		if !strings.Contains(res.stdout, want) {
 			t.Errorf("output lacks %q:\n%s", want, res.stdout)
 		}
@@ -161,11 +171,10 @@ func TestNew_IdentityForAnotherRelayIsKeptAndExplained(t *testing.T) {
 	}
 }
 
-func TestRemove_LeavesTheChannelAndDeletesBothFiles(t *testing.T) {
+func TestRemove_LeavesTheChannelAndDeletesTheIdentity(t *testing.T) {
 	ownerSK, ownerPub := owner(t)
 	r := nipoaRelay(t, ownerPub)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "buzz-agent.env")
+	path := filepath.Join(t.TempDir(), "buzz-agent.env")
 	if res := invoke(t, map[string]string{envOwnerSecret: ownerSK.Nsec()}, "new", "-relay", r.URL(), "-out", path, "-channel", "teos-grok"); res.code != exitOK {
 		t.Fatalf("new: %s", res.stderr)
 	}
@@ -178,10 +187,8 @@ func TestRemove_LeavesTheChannelAndDeletesBothFiles(t *testing.T) {
 	if slices.Contains(r.Members("c-1"), agent) {
 		t.Fatal("agent is still a channel member")
 	}
-	for _, p := range []string{path, filepath.Join(dir, "buzz-agent.grok.txt")} {
-		if _, err := os.Lstat(p); !os.IsNotExist(err) {
-			t.Errorf("%s still exists: %v", p, err)
-		}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("%s still exists: %v", path, err)
 	}
 
 	res = invoke(t, nil, "remove", "-env", path, "-channel", "teos-grok")

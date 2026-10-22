@@ -183,47 +183,6 @@ func TestRender_GrokMessageCarriesTheVariablesAndTheRoutine(t *testing.T) {
 	}
 }
 
-func TestSave_ReplaceRewritesAnExistingFileOwnerOnly(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "agent.grok.txt")
-	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s, _ := envfile.New(path, envfile.FormatGrok, envfile.WithReplace())
-	if err := s.Writable(context.Background()); err != nil {
-		t.Fatalf("writable: %v", err)
-	}
-	if err := s.Save(context.Background(), specIdentity(t)); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(path)
-	info, _ := os.Stat(path)
-	if strings.Contains(string(b), "stale") || info.Mode().Perm() != 0o600 {
-		t.Fatalf("mode %v, content:\n%s", info.Mode().Perm(), b)
-	}
-}
-
-func TestSave_ReplaceNeverWritesThroughASymlink(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "elsewhere")
-	if err := os.WriteFile(target, []byte("keep"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "agent.grok.txt")
-	if err := os.Symlink(target, path); err != nil {
-		t.Skip("symlinks unavailable:", err)
-	}
-	s, _ := envfile.New(path, envfile.FormatGrok, envfile.WithReplace())
-	if err := s.Save(context.Background(), specIdentity(t)); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(target); string(b) != "keep" {
-		t.Fatalf("symlink target written: %q", b)
-	}
-	if info, _ := os.Lstat(path); info.Mode()&os.ModeSymlink != 0 {
-		t.Fatal("path is still a symlink")
-	}
-}
-
 func TestRemove_DeletesTheFileOnce(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.env")
 	s, _ := envfile.New(path, envfile.FormatEnv)

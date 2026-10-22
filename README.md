@@ -32,17 +32,19 @@ Prebuilt binaries for macOS, Linux and Windows are attached to each [release](ht
                    owner    npub1…  (must be a member of the relay)
                    relay    https://buzz.example.com
                    expires  2029-10-22T09:14:03Z
-   ok    grok      wrote buzz-agent.grok.txt (mode 0600, holds the agent key)
    ok    relay     https://buzz.example.com admits the agent
    ok    channel   joined my-channel (5f0c…)
    ok    check     read 3 recent message(s) in my-channel
+
+   Grok Bot: copy everything between the ``` lines into a chat with your Grok Bot.
+   …
    ```
 
    It creates the agent identity, checks that the relay admits the agent, joins the channel and reads it. When a step fails it says what to do: what the relay admin has to change, or that a private channel needs the agent added in Buzz Desktop (Members, add the printed npub). Fix that and run the same command again. A second run keeps the identity, does not ask for your key and skips what is already done.
 
-3. Give the identity to the agent. For a Grok Bot, paste the whole of `buzz-agent.grok.txt` into a chat with the bot ([docs/guides/grok-bot.md](docs/guides/grok-bot.md)). Other agents read the three variables in `buzz-agent.env`.
+3. Give the identity to the agent. For a Grok Bot, copy the prompt `new` printed last, between the ``` lines, into a chat with the bot ([docs/guides/grok-bot.md](docs/guides/grok-bot.md)). Other agents read the three variables in `buzz-agent.env`.
 
-To start over, `gobuzzkey remove -channel my-channel` takes the agent out of the channel and deletes both files.
+To start over, `gobuzzkey remove -channel my-channel` takes the agent out of the channel and deletes `buzz-agent.env`.
 
 ## Commands
 
@@ -51,16 +53,17 @@ To start over, `gobuzzkey remove -channel my-channel` takes the agent out of the
 Sets up an agent in steps, printing `ok` or `FAIL` for each, and stops at the first failure:
 
 1. **identity**: generates the agent key and the attestation and writes the identity, or keeps the identity already at `-out` when it is for the same relay and has not expired. An identity for another relay or an expired one stops the run; `remove` clears it.
-2. **grok**: writes the Grok Bot setup message next to the identity (`buzz-agent.grok.txt`, mode 0600). It holds the agent key and is rewritten on every run.
-3. **relay**: signs in as the agent to prove the relay admits it.
-4. **channel**: with `-channel`, joins the channel as the agent. Buzz lets anyone join an open channel; a private channel needs a member to add the agent, so `new` prints the npub to add in Buzz Desktop instead.
-5. **check**: reads the channel's recent messages.
+2. **relay**: signs in as the agent to prove the relay admits it.
+3. **channel**: with `-channel`, joins the channel as the agent. Buzz lets anyone join an open channel; a private channel needs a member to add the agent, so `new` prints the npub to add in Buzz Desktop instead.
+4. **check**: reads the channel's recent messages.
+
+Last, it prints the Grok Bot prompt between ``` fences, even after a failed step. The prompt holds the agent key.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `-relay` | required | Relay URL: `ws`, `wss`, `http` or `https`, host and optional port only. Buzz serves its API at the host root, so a path is rejected. Stored as the `http(s)` base URL. |
 | `-channel` | none | Channel name or ID to join and read. |
-| `-out` | `buzz-agent.env` | Identity file; kept when it exists, never overwritten. `-` writes the identity to stdout and the steps to stderr, and writes no Grok Bot message. |
+| `-out` | `buzz-agent.env` | Identity file; kept when it exists, never overwritten. `-` writes the identity to stdout and the steps to stderr, and prints no Grok Bot prompt. |
 | `-format` | `env` | `env` (shell-sourceable) or `json` (one object, usable as an MCP server `env` block). Anything else is a usage error. |
 | `-expires` | `3y` | Expiry of a new identity: `YYYY-MM-DD` (00:00 UTC), an RFC 3339 time, or a duration such as `3y`, `90d` or `36h`. Adds a `created_at<` condition, so the relay stops admitting the agent at that time. Must be in the future and no later than 2106-02-07, the last time a NIP-OA condition can express. Ignored when the identity is kept. |
 
@@ -68,7 +71,7 @@ The owner key is needed only when a new identity is created. It is read from a h
 
 ### `gobuzzkey remove`
 
-Undoes `new` and is safe to run again: with `-channel` the agent leaves that channel, then the identity file and its Grok Bot message are deleted. If the agent cannot leave (the relay is down, say), both files are kept so you can try again; run without `-channel` to delete them anyway. Remove the `buzz` MCP server from the Grok Bot yourself: it holds a copy of the agent key.
+Undoes `new` and is safe to run again: with `-channel` the agent leaves that channel, then the identity file is deleted. If the agent cannot leave (the relay is down, say), the file is kept so you can try again; run without `-channel` to delete it anyway. Remove the `buzz` MCP server from the Grok Bot yourself: it holds a copy of the agent key.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -138,7 +141,7 @@ Until then `new` and `check` exit with status 5 and `RELAY_MEMBERSHIP_REQUIRED`,
 
 ## Security
 
-Your owner key is used for one signature and never written anywhere. The agent key is written only to the identity file and its Grok Bot message, both with mode 0600, and gobuzzkey never prints it. A secret key prints as `nsec1…(redacted)` under every `fmt` verb, also inside other structs, and a lint rule confines revealing one to the identity store. Text that comes from the relay, such as channel names and error messages, has control characters escaped before it reaches your terminal.
+Your owner key is used for one signature and never written anywhere. The agent key is written only to the identity file, with mode 0600, and printed only inside the Grok Bot prompt (and to stdout with `-out -`), so the terminal scrollback holds it after `new`. A secret key prints as `nsec1…(redacted)` under every `fmt` verb, also inside other structs, and a lint rule confines revealing one to the identity store. Text that comes from the relay, such as channel names and error messages, has control characters escaped before it reaches your terminal.
 
 An attestation cannot be withdrawn once issued. The relay keeps admitting the agent until the attestation expires or you stop being a relay member. Removing the agent from a channel cuts its access to that channel at once, but not to the relay. That is why `new` sets a 3-year expiry unless you pass `-expires`. Ask the relay operator to block the agent's key if it must be shut out before then.
 

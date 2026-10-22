@@ -72,7 +72,7 @@ Authoritative glossary. One term per row. If a concept appears in code, flags, o
 | **Attested identity** | An identity with an attestation; the relay admits it through the owner. |
 | **Member identity** | An identity without an attestation; the agent itself must be a member. |
 | **Identity file** | The stored identity: env lines or a JSON object with `BUZZ_RELAY_URL`, `BUZZ_PRIVATE_KEY`, `BUZZ_AUTH_TAG`. Never overwritten; `new` keeps an existing one for the same relay. |
-| **Grok Bot message** | A chat message, written next to the identity file as `<name>.grok.txt`, that has a Grok Bot install the buzz-grokbot MCP server with the identity and create its polling routine. Holds the agent key; derived from the identity and rewritten on every `new`. |
+| **Grok Bot prompt** | The chat message `new` prints last, between ``` fences, that has a Grok Bot install the buzz-grokbot MCP server with the identity and create its polling routine. Holds the agent key, so the identity store writes it. Never written to a file. |
 
 ## Use cases (`app`)
 
@@ -81,7 +81,7 @@ Authoritative glossary. One term per row. If a concept appears in code, flags, o
 | **Mint** | Create an attested identity: generate the agent key, sign, store. First step of command `new`. |
 | **Reusable** | An opened identity that can serve the requested relay now: same relay, attestation not expired. `new` keeps it instead of minting. |
 | **Join / leave** | Make the agent a channel member or take it out, with a join or leave request signed by the agent. Joining an open channel needs no owner key; a private one needs a member to add the agent. Command `new -channel`, `remove -channel`. |
-| **Remove** | Undo `new`: leave the channel, delete the identity file and its Grok Bot message. Command `remove`. |
+| **Remove** | Undo `new`: leave the channel, delete the identity file. Command `remove`. |
 | **Open** | Read an identity file and verify it (key pairing, signature). |
 | **Inspect / verify** | Report on an attestation as a relay would judge it now. Command `verify`. |
 | **Check** | Prove an identity against a live relay. Command `check`. |

@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/mariotoffia/gobuzzkey/adapters/crypto/secp256k1"
 	"github.com/mariotoffia/gobuzzkey/adapters/relay/buzzhttp"
@@ -26,32 +24,6 @@ func step(w io.Writer, err error, name, text string) {
 		text = printable(err.Error())
 	}
 	_, _ = fmt.Fprintf(w, "%s  %-8s  %s\n", status, name, text)
-}
-
-// grokPath is where the Grok Bot message for identity file out goes:
-// buzz-agent.env gives buzz-agent.grok.txt.
-func grokPath(out string) string {
-	return strings.TrimSuffix(out, filepath.Ext(out)) + ".grok.txt"
-}
-
-// writeGrok writes the Grok Bot setup message next to the identity file and
-// returns its path, or "" when the identity went to stdout. The message holds
-// the agent key, so it gets the identity file's 0600 mode; it is derived from
-// the identity, so it is rewritten on every run.
-func writeGrok(ctx context.Context, w io.Writer, out string, id identity.AgentIdentity) (string, error) {
-	if out == envfile.Stdout {
-		return "", nil
-	}
-	path := grokPath(out)
-	store, err := envfile.New(path, envfile.FormatGrok, envfile.WithReplace())
-	if err == nil {
-		err = store.Save(ctx, id)
-	}
-	if err != nil {
-		return "", err
-	}
-	step(w, nil, "grok", "wrote "+path+" (mode 0600, holds the agent key)")
-	return path, nil
 }
 
 // enroll proves the relay admits the agent and, when channel is set, joins it
@@ -87,9 +59,9 @@ func enroll(ctx context.Context, w io.Writer, crypto secp256k1.Crypto, clk clock
 	return nil
 }
 
-// printNext ends the run with what is left to do: for the relay admin, for
-// the owner in Buzz Desktop, and the Grok Bot message.
-func printNext(w io.Writer, id identity.AgentIdentity, channel, grok string, err error) {
+// printNext prints what is left to do after the steps: for the relay admin or
+// for the owner in Buzz Desktop.
+func printNext(w io.Writer, id identity.AgentIdentity, channel string, err error) {
 	agent := id.Agent().Npub()
 	switch {
 	case shared.IsCode(err, shared.CodeRelayMembershipRequired):
@@ -110,15 +82,23 @@ func printNext(w io.Writer, id identity.AgentIdentity, channel, grok string, err
 	case channel == "":
 		_, _ = fmt.Fprintln(w, "\nNo -channel given: run this command again with -channel <name> to join one.")
 	}
-	if grok == "" {
-		return
-	}
-	_, _ = fmt.Fprintf(w, "\nGrok Bot: open a chat with your Grok Bot and paste the whole of\n"+
-		"  %s\n"+
-		"macOS copies it with: pbcopy < %s\n"+
-		"The bot installs the Buzz connection on its cloud computer and from then on\n"+
-		"answers mentions within 5 minutes.\n", grok, grok)
+}
+
+// printGrok ends the run with the Grok Bot prompt between ``` fences, ready to
+// copy. The prompt holds the agent key, so it is written by the identity store,
+// the one way a secret leaves the process (as with "-out -").
+func printGrok(ctx context.Context, w io.Writer, id identity.AgentIdentity, err error) error {
+	_, _ = fmt.Fprintln(w, "\nGrok Bot: copy everything between the ``` lines into a chat with your Grok Bot.\n"+
+		"It installs the Buzz connection on its cloud computer and from then on answers\n"+
+		"mentions within 5 minutes. The prompt holds the agent key: share it with nobody else.")
 	if err != nil {
 		_, _ = fmt.Fprintln(w, "It can reach Buzz only once the step above is done.")
 	}
+	_, _ = fmt.Fprintln(w, "```")
+	store, serr := envfile.New(envfile.Stdout, envfile.FormatGrok, envfile.WithStdout(w))
+	if serr == nil {
+		serr = store.Save(ctx, id)
+	}
+	_, _ = fmt.Fprintln(w, "```")
+	return serr
 }

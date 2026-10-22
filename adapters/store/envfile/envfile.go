@@ -43,17 +43,16 @@ const (
 	FormatEnv Format = "env"
 	// FormatJSON is one JSON object, usable as an MCP server "env" block.
 	FormatJSON Format = "json"
-	// FormatGrok is a chat message that has a Grok Bot install the
+	// FormatGrok is a chat prompt that has a Grok Bot install the
 	// buzz-grokbot MCP server with the identity. Write-only.
 	FormatGrok Format = "grok"
 )
 
 // Store reads and writes one identity location.
 type Store struct {
-	path    string
-	format  Format
-	stdout  io.Writer
-	replace bool
+	path   string
+	format Format
+	stdout io.Writer
 }
 
 // Option configures a Store.
@@ -61,10 +60,6 @@ type Option func(*Store)
 
 // WithStdout sets where path "-" writes.
 func WithStdout(w io.Writer) Option { return func(s *Store) { s.stdout = w } }
-
-// WithReplace lets Save replace an existing file. Only for files derived from
-// an identity that is stored elsewhere, such as the Grok message.
-func WithReplace() Option { return func(s *Store) { s.replace = true } }
 
 // New returns a store for path in format.
 func New(path string, format Format, opts ...Option) (*Store, error) {
@@ -78,10 +73,9 @@ func New(path string, format Format, opts ...Option) (*Store, error) {
 	return s, nil
 }
 
-// Writable fails with IDENTITY_EXISTS when the destination file exists and
-// the store may not replace it.
+// Writable fails with IDENTITY_EXISTS when the destination file exists.
 func (s *Store) Writable(_ context.Context) error {
-	if s.path == Stdout || s.replace {
+	if s.path == Stdout {
 		return nil
 	}
 	if _, err := os.Lstat(s.path); err == nil {
@@ -92,9 +86,8 @@ func (s *Store) Writable(_ context.Context) error {
 	return nil
 }
 
-// Save writes id. A file is created with mode 0600 and never overwritten;
-// WithReplace removes an existing file (never following a symlink) first.
-func (s *Store) Save(ctx context.Context, id identity.AgentIdentity) error {
+// Save writes id. A file is created with mode 0600 and never overwritten.
+func (s *Store) Save(_ context.Context, id identity.AgentIdentity) error {
 	data, err := Render(id, s.format)
 	if err != nil {
 		return err
@@ -104,11 +97,6 @@ func (s *Store) Save(ctx context.Context, id identity.AgentIdentity) error {
 			return shared.Wrap(shared.CodeIdentityInvalid, "write identity", err)
 		}
 		return nil
-	}
-	if s.replace {
-		if _, err := s.Remove(ctx); err != nil {
-			return err
-		}
 	}
 	f, err := os.OpenFile(s.path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
 	if errors.Is(err, fs.ErrExist) {

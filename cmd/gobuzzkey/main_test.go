@@ -84,7 +84,7 @@ func TestNewVerifyCheck_EndToEndAgainstARelayThatAcceptsAttestations(t *testing.
 	if res.code != exitOK {
 		t.Fatalf("new: %d %s", res.code, res.stderr)
 	}
-	if !strings.Contains(res.stdout, "owner    "+ownerPub.Npub()) || strings.Contains(res.stdout+res.stderr, "nsec1") {
+	if _, outside := grokPrompt(t, res.stdout); !strings.Contains(outside, "owner    "+ownerPub.Npub()) || strings.Contains(outside+res.stderr, "nsec1") {
 		t.Fatalf("new output:\n%s", res.stdout)
 	}
 

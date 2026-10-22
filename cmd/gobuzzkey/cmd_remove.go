@@ -20,8 +20,8 @@ func cmdRemove(ctx context.Context, e env) error {
 	fs.Usage = func() {
 		_, _ = fmt.Fprint(e.stderr, "Usage: gobuzzkey remove [-env <file>] [-channel <name|id>]\n\n"+
 			"Undoes gobuzzkey new and is safe to run again: the agent leaves -channel, then\n"+
-			"the identity file and its Grok Bot message are deleted. The attestation cannot\n"+
-			"be withdrawn, but without the agent key nobody can use it.\n\nFlags:\n")
+			"the identity file is deleted. The attestation cannot be withdrawn, but without\n"+
+			"the agent key nobody can use it.\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := parseFlags(fs, e.args); err != nil {
@@ -46,21 +46,15 @@ func cmdRemove(ctx context.Context, e env) error {
 			return explained{err}
 		}
 	}
-	for _, f := range []struct{ name, path string }{{"identity", *envPath}, {"grok", grokPath(*envPath)}} {
-		s, err := envfile.New(f.path, envfile.FormatEnv)
-		if err != nil {
-			return err
-		}
-		removed, err := s.Remove(ctx)
-		switch {
-		case err != nil:
-			step(w, err, f.name, "")
-			return explained{err}
-		case removed:
-			step(w, nil, f.name, "deleted "+f.path)
-		default:
-			step(w, nil, f.name, f.path+" does not exist")
-		}
+	removed, err := store.Remove(ctx)
+	switch {
+	case err != nil:
+		step(w, err, "identity", "")
+		return explained{err}
+	case removed:
+		step(w, nil, "identity", "deleted "+*envPath)
+	default:
+		step(w, nil, "identity", *envPath+" does not exist")
 	}
 	_, _ = fmt.Fprintln(w, "\nAlso remove the \"buzz\" MCP server from your Grok Bot (Settings, Plugins, Yours):\n"+
 		"it still holds a copy of the agent key.")
