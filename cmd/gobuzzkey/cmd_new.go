@@ -73,11 +73,15 @@ func cmdNew(ctx context.Context, e env) error {
 	if err != nil {
 		return err
 	}
-	err = enroll(ctx, w, crypto, e.clock, id, *channel)
+	m, err := enroll(ctx, w, crypto, e.clock, id, *channel)
 	printNext(w, id, *channel, err)
 	// With "-out -" the identity itself is on stdout, headed for a pipe.
 	if *out != envfile.Stdout {
-		if perr := printGrok(ctx, w, id, err); perr != nil {
+		name := *channel
+		if m.Channel.ID != "" {
+			name = m.Channel.Name
+		}
+		if perr := printGrok(ctx, w, id, m.Channel.ID, name, err); perr != nil {
 			return perr
 		}
 	}

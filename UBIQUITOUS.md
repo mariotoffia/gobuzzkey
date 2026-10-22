@@ -72,7 +72,7 @@ Authoritative glossary. One term per row. If a concept appears in code, flags, o
 | **Attested identity** | An identity with an attestation; the relay admits it through the owner. |
 | **Member identity** | An identity without an attestation; the agent itself must be a member. |
 | **Identity file** | The stored identity: env lines or a JSON object with `BUZZ_RELAY_URL`, `BUZZ_PRIVATE_KEY`, `BUZZ_AUTH_TAG`. Never overwritten; `new` keeps an existing one for the same relay. |
-| **Grok Bot prompt** | The chat message `new` prints last, between ``` fences, that has a Grok Bot install the buzz-grokbot MCP server with the identity and create its polling routine. Holds the agent key, so the identity store writes it. Never written to a file. |
+| **Grok Bot prompt** | The chat message `new` prints last, between ``` fences, that has a Grok Bot install the buzz-grokbot MCP server with the identity and create its polling routine: every new message in the `-channel` channel plus mentions and replies elsewhere, skipping its own. Holds the agent key, so the identity store writes it. Never written to a file. |
 
 ## Use cases (`app`)
 

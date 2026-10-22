@@ -15,7 +15,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 - `new` ends by printing the whole prompt to paste into a Grok Bot chat,
   between ``` fences, with the three variables filled in and the polling
   routine. It holds the agent key. The MCP server it installs is pinned to a
-  reviewed buzz-grokbot commit.
+  reviewed buzz-grokbot commit. With `-channel`, the routine reads every new
+  message in that channel, not only mentions and replies, and skips the
+  bot's own messages.
 - When the relay refuses the agent, `new` prints what the relay admin has to
   change, with the owner and agent npubs filled in.
 - `gobuzzkey remove [-channel <name>]` takes the agent out of the channel and

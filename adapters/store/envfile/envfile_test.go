@@ -150,7 +150,7 @@ func TestNew_RejectsUnknownFormat(t *testing.T) {
 	}
 }
 
-func TestRender_GrokMessageCarriesTheVariablesAndTheRoutine(t *testing.T) {
+func TestRender_GrokPromptInstallsTheServerWithTheVariables(t *testing.T) {
 	id := specIdentity(t)
 	out, err := envfile.Render(id, envfile.FormatGrok)
 	if err != nil {
@@ -162,8 +162,6 @@ func TestRender_GrokMessageCarriesTheVariablesAndTheRoutine(t *testing.T) {
 		"BUZZ_RELAY_URL = https://relay.example\n",
 		"BUZZ_PRIVATE_KEY = " + id.Secret().Nsec() + "\n",
 		"BUZZ_AUTH_TAG = " + specTag + "\n",
-		"call buzz_inbox",
-		"untrusted",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message lacks %q:\n%s", want, msg)
