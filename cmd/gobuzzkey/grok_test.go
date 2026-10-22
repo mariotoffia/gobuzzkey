@@ -43,3 +43,25 @@ func TestGrokRoutine_ChannelNameCannotBreakOutOfThePrompt(t *testing.T) {
 		t.Fatalf("routine carries a fence or control characters:\n%q", got)
 	}
 }
+
+func TestGrokSummaries_AsksBeforeSettingUpAndKeepsSecretsOut(t *testing.T) {
+	cases := map[string]struct {
+		id, name string
+		want     []string
+	}{
+		"joined channel": {"c-1", "teos-grok", []string{"channel_id = c-1", `"teos-grok"`, "every 30 minutes"}},
+		"id unknown":     {"", "ops", []string{`"ops"`, "buzz_list_channels"}},
+		"no channel":     {"", "", []string{"Which Buzz channel", "buzz_list_channels"}},
+	}
+	for name, tc := range cases {
+		got := grokSummaries(tc.id, tc.name)
+		for _, w := range append(tc.want, "Ask me", "wait for my answers", "secret", "If I do not want summaries") {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: summaries lack %q:\n%s", name, w, got)
+			}
+		}
+		if strings.Contains(got, "```") {
+			t.Errorf("%s: summaries carry a fence:\n%s", name, got)
+		}
+	}
+}

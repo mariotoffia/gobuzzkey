@@ -28,6 +28,7 @@ func printGrok(ctx context.Context, w io.Writer, id identity.AgentIdentity, chan
 	}
 	_, _ = fmt.Fprint(w, "\nThen create a recurring routine with this instruction:\n\n"+
 		grokRoutine(channelID, channelName, id.Agent().Hex()))
+	_, _ = fmt.Fprint(w, "\nFinally, status summaries:\n\n"+grokSummaries(channelID, channelName))
 	_, _ = fmt.Fprintln(w, "```")
 	return serr
 }
@@ -65,6 +66,33 @@ func grokRoutine(channelID, channelName, agentHex string) string {
 		"If nothing is left, do nothing and post nothing.\n" +
 		"Save the newest created_at from step 1, next_cursor from step 2 and the\n" +
 		"handled ids.\n" + tail
+}
+
+// grokSummaries has the bot ask the owner what to report to Buzz, and how,
+// before it sets up a summary routine: what goes into a summary differs per
+// owner (other routines, Slack channels, digests), so the bot asks, not guesses.
+func grokSummaries(channelID, channelName string) string {
+	target := "Which Buzz channel should get them? Find its id with buzz_list_channels."
+	switch {
+	case channelID != "":
+		target = "They go to the " + strconv.Quote(promptSafe(channelName)) + " channel (channel_id = " + promptSafe(channelID) + ")\n" +
+			"   unless I name another one."
+	case channelName != "":
+		target = "They go to the " + strconv.Quote(promptSafe(channelName)) + " channel (its id is in\n" +
+			"   buzz_list_channels) unless I name another one."
+	}
+	return "Offer to post status summaries to Buzz with buzz_send_message. Ask me these\n" +
+		"questions in one message and wait for my answers before you set anything up:\n" +
+		"1. " + target + "\n" +
+		"2. What should a summary cover: your other routines and their results,\n" +
+		"   summaries you already post elsewhere (for example Slack) mirrored\n" +
+		"   unchanged, a daily digest, or something else?\n" +
+		"3. How often? The default is every 30 minutes, plus a daily digest if I want one.\n" +
+		"4. Who reads them, and how long and in what format should they be? Should you\n" +
+		"   post when nothing has changed? The default is to post nothing then.\n" +
+		"Then create the routine, and tell me in one message what you set up.\n" +
+		"If I do not want summaries, skip this. Never put a key, token or other secret\n" +
+		"into a summary.\n"
 }
 
 // promptSafe makes relay- or user-supplied text inert inside the fenced

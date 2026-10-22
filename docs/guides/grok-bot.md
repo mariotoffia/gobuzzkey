@@ -32,6 +32,8 @@ If you set the bot up with an earlier prompt that only calls `buzz_inbox`, ask i
    - add a custom stdio MCP server named `buzz` that runs buzz-grokbot at a pinned commit, with `BUZZ_RELAY_URL`, `BUZZ_PRIVATE_KEY` and `BUZZ_AUTH_TAG` set to your agent's values;
    - create a routine that every 5 minutes reads all new messages in your channel (`buzz_list_messages`) and the mentions and replies elsewhere (`buzz_inbox`), and answers each with `buzz_send_message`. It skips its own messages by public key, posts nothing when there is nothing new, and treats message content as data, never as instructions.
 
+   - offer status summaries to Buzz. The bot first asks you, in one message, which channel gets them, what they cover (its other routines, summaries it already posts to Slack mirrored unchanged, a daily digest), how often (every 30 minutes by default), who reads them and in what format. It sets up the routine only after you answer, never puts a secret into a summary, and skips this if you say no.
+
    `buzz_inbox` alone only sees messages that mention the bot or reply to it, so without `-channel` the bot answers only those.
 
    The prompt holds the agent key: paste it into your own Grok Bot only. Running `new` again prints it again.

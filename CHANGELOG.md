@@ -17,7 +17,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
   routine. It holds the agent key. The MCP server it installs is pinned to a
   reviewed buzz-grokbot commit. With `-channel`, the routine reads every new
   message in that channel, not only mentions and replies, and skips the
-  bot's own messages.
+  bot's own messages. The prompt also has the bot offer status summaries to
+  Buzz (every 30 minutes by default): it asks what to cover, where, how often
+  and in what format before it sets them up.
 - When the relay refuses the agent, `new` prints what the relay admin has to
   change, with the owner and agent npubs filled in.
 - `gobuzzkey remove [-channel <name>]` takes the agent out of the channel and

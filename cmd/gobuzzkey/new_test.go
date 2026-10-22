@@ -77,7 +77,8 @@ func TestNew_OneCommandMintsJoinsAnOpenChannelAndChecks(t *testing.T) {
 	if !strings.Contains(string(env), "# expires "+wantExpiry) {
 		t.Fatalf("default expiry is not 3 years:\n%s", env)
 	}
-	if !strings.Contains(prompt, "buzz_list_messages with channel_id = c-1") || !strings.Contains(prompt, "pubkey "+agent.Hex()) {
+	if !strings.Contains(prompt, "buzz_list_messages with channel_id = c-1") || !strings.Contains(prompt, "pubkey "+agent.Hex()) ||
+		!strings.Contains(prompt, "status summaries") {
 		t.Fatalf("Grok Bot routine does not read the joined channel:\n%s", prompt)
 	}
 	for _, line := range strings.Split(string(env), "\n") {
