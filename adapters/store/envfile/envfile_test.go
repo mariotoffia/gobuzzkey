@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -39,7 +40,7 @@ func specIdentity(t *testing.T) identity.AgentIdentity {
 	return id
 }
 
-func TestSaveLoad_RoundTripsEveryFormat(t *testing.T) {
+func TestSaveLoad_RoundTripsEnvAndJSON(t *testing.T) {
 	id := specIdentity(t)
 	for _, format := range []envfile.Format{envfile.FormatEnv, envfile.FormatJSON} {
 		t.Run(string(format), func(t *testing.T) {
@@ -146,5 +147,96 @@ func TestParse_RequiresRelayAndKey(t *testing.T) {
 func TestNew_RejectsUnknownFormat(t *testing.T) {
 	if _, err := envfile.New("x", "yaml"); !shared.IsCode(err, shared.CodeIdentityInvalid) {
 		t.Fatalf("want IDENTITY_INVALID, got %v", err)
+	}
+}
+
+func TestRender_GrokMessageCarriesTheVariablesAndTheRoutine(t *testing.T) {
+	id := specIdentity(t)
+	out, err := envfile.Render(id, envfile.FormatGrok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := string(out)
+	for _, want := range []string{
+		"npx -y github:davidorban/buzz-grokbot",
+		"BUZZ_RELAY_URL = https://relay.example\n",
+		"BUZZ_PRIVATE_KEY = " + id.Secret().Nsec() + "\n",
+		"BUZZ_AUTH_TAG = " + specTag + "\n",
+		"call buzz_inbox",
+		"untrusted",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message lacks %q:\n%s", want, msg)
+		}
+	}
+	if !regexp.MustCompile(`github:davidorban/buzz-grokbot#[0-9a-f]{40}\n`).MatchString(msg) {
+		t.Errorf("MCP server is not pinned to a full commit:\n%s", msg)
+	}
+	if strings.Contains(msg, "'") {
+		t.Errorf("message quotes a value; Grok Bot would keep the quotes:\n%s", msg)
+	}
+
+	member, _ := identity.NewMember(id.Relay(), id.Secret(), id.Agent())
+	out, _ = envfile.Render(member, envfile.FormatGrok)
+	if strings.Contains(string(out), "BUZZ_AUTH_TAG") {
+		t.Fatalf("member identity message names an auth tag:\n%s", out)
+	}
+}
+
+func TestSave_ReplaceRewritesAnExistingFileOwnerOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.grok.txt")
+	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := envfile.New(path, envfile.FormatGrok, envfile.WithReplace())
+	if err := s.Writable(context.Background()); err != nil {
+		t.Fatalf("writable: %v", err)
+	}
+	if err := s.Save(context.Background(), specIdentity(t)); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	info, _ := os.Stat(path)
+	if strings.Contains(string(b), "stale") || info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v, content:\n%s", info.Mode().Perm(), b)
+	}
+}
+
+func TestSave_ReplaceNeverWritesThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "elsewhere")
+	if err := os.WriteFile(target, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "agent.grok.txt")
+	if err := os.Symlink(target, path); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	s, _ := envfile.New(path, envfile.FormatGrok, envfile.WithReplace())
+	if err := s.Save(context.Background(), specIdentity(t)); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "keep" {
+		t.Fatalf("symlink target written: %q", b)
+	}
+	if info, _ := os.Lstat(path); info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("path is still a symlink")
+	}
+}
+
+func TestRemove_DeletesTheFileOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.env")
+	s, _ := envfile.New(path, envfile.FormatEnv)
+	if err := s.Save(context.Background(), specIdentity(t)); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := s.Remove(context.Background()); !removed || err != nil {
+		t.Fatalf("first remove: %v %v", removed, err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("file still there: %v", err)
+	}
+	if removed, err := s.Remove(context.Background()); removed || err != nil {
+		t.Fatalf("second remove: %v %v", removed, err)
 	}
 }

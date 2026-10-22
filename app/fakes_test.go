@@ -97,6 +97,7 @@ func (f fakeSource) Load(context.Context) (ports.IdentityRecord, error) { return
 
 type fakeRelay struct {
 	channels  []relay.Channel
+	members   map[string][]string // channel ID -> member pubkey hex (kind 39002)
 	history   map[string]int
 	queryErr  error
 	reject    string // non-empty: Publish answers accepted=false with this message
@@ -110,11 +111,23 @@ func (f *fakeRelay) Query(_ context.Context, filter nostr.Filter) ([]nostr.Event
 		return nil, f.queryErr
 	}
 	var out []nostr.Event
-	if filter.Kinds[0] == nostr.KindChannelMetadata {
+	switch filter.Kinds[0] {
+	case nostr.KindChannelMetadata:
 		for _, ch := range f.channels {
-			out = append(out, nostr.Event{Kind: nostr.KindChannelMetadata, Tags: [][]string{{"d", ch.ID}, {"name", ch.Name}}})
+			tags := [][]string{{"d", ch.ID}, {"name", ch.Name}}
+			if ch.Private {
+				tags = append(tags, []string{"private"})
+			}
+			out = append(out, nostr.Event{Kind: nostr.KindChannelMetadata, Tags: tags})
 		}
 		return out, nil
+	case nostr.KindChannelMembers:
+		id := filter.Tags["d"][0]
+		ev := nostr.Event{Kind: nostr.KindChannelMembers, Tags: [][]string{{"d", id}}}
+		for _, pk := range f.members[id] {
+			ev.Tags = append(ev.Tags, []string{"p", pk})
+		}
+		return []nostr.Event{ev}, nil
 	}
 	for range f.history[filter.Tags["h"][0]] {
 		out = append(out, nostr.Event{Kind: nostr.KindChannelMessage})

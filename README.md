@@ -14,44 +14,66 @@ The better arrangement is the one Buzz itself uses for its agents. The agent get
 go install github.com/mariotoffia/gobuzzkey/cmd/gobuzzkey@latest
 ```
 
-Prebuilt binaries for macOS, Linux and Windows are attached to each [release](https://github.com/mariotoffia/gobuzzkey/releases).
+Prebuilt binaries for macOS, Linux and Windows are attached to each [release](https://github.com/mariotoffia/gobuzzkey/releases). From a checkout, `make install-cli` builds the current source and installs it the same way.
 
 ## Quick start
 
-1. Copy your Buzz private key. In Buzz desktop: Settings, Profile, Private key.
+1. Copy your Buzz private key. In Buzz Desktop: Settings, Profile, Private key.
 
-2. Mint the agent identity. Paste your key at the hidden prompt.
-
-   ```sh
-   gobuzzkey new -relay wss://buzz.example.com -expires 2027-12-31
-   ```
-
-   This writes `buzz-agent.env` (mode 0600) and prints the agent's npub.
-
-3. In Buzz, open the channel the agent should use, choose members, paste the agent npub and add it.
-
-4. Check that the relay admits the agent and that it can read and post:
+2. Run one command. Paste your key at the hidden prompt.
 
    ```sh
-   gobuzzkey check -channel my-channel -send "hello from the agent"
+   gobuzzkey new -relay wss://buzz.example.com -channel my-channel
    ```
 
-5. Give the three variables in `buzz-agent.env` to the agent. [docs/guides/grok-bot.md](docs/guides/grok-bot.md) walks through a Grok Bot with the buzz-grokbot MCP server.
+   ```text
+   ok    identity  created buzz-agent.env (mode 0600)
+                   agent    npub1…
+                   owner    npub1…  (must be a member of the relay)
+                   relay    https://buzz.example.com
+                   expires  2029-10-22T09:14:03Z
+   ok    grok      wrote buzz-agent.grok.txt (mode 0600, holds the agent key)
+   ok    relay     https://buzz.example.com admits the agent
+   ok    channel   joined my-channel (5f0c…)
+   ok    check     read 3 recent message(s) in my-channel
+   ```
+
+   It creates the agent identity, checks that the relay admits the agent, joins the channel and reads it. When a step fails it says what to do: what the relay admin has to change, or that a private channel needs the agent added in Buzz Desktop (Members, add the printed npub). Fix that and run the same command again. A second run keeps the identity, does not ask for your key and skips what is already done.
+
+3. Give the identity to the agent. For a Grok Bot, paste the whole of `buzz-agent.grok.txt` into a chat with the bot ([docs/guides/grok-bot.md](docs/guides/grok-bot.md)). Other agents read the three variables in `buzz-agent.env`.
+
+To start over, `gobuzzkey remove -channel my-channel` takes the agent out of the channel and deletes both files.
 
 ## Commands
 
 ### `gobuzzkey new`
 
-Generates the agent key and the attestation and writes the identity.
+Sets up an agent in steps, printing `ok` or `FAIL` for each, and stops at the first failure:
+
+1. **identity**: generates the agent key and the attestation and writes the identity, or keeps the identity already at `-out` when it is for the same relay and has not expired. An identity for another relay or an expired one stops the run; `remove` clears it.
+2. **grok**: writes the Grok Bot setup message next to the identity (`buzz-agent.grok.txt`, mode 0600). It holds the agent key and is rewritten on every run.
+3. **relay**: signs in as the agent to prove the relay admits it.
+4. **channel**: with `-channel`, joins the channel as the agent. Buzz lets anyone join an open channel; a private channel needs a member to add the agent, so `new` prints the npub to add in Buzz Desktop instead.
+5. **check**: reads the channel's recent messages.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `-relay` | required | Relay URL: `ws`, `wss`, `http` or `https`, host and optional port only. Buzz serves its API at the host root, so a path is rejected. Stored as the `http(s)` base URL. |
-| `-out` | `buzz-agent.env` | Destination. `-` writes the identity to stdout and the summary to stderr. An existing file is never overwritten. |
+| `-channel` | none | Channel name or ID to join and read. |
+| `-out` | `buzz-agent.env` | Identity file; kept when it exists, never overwritten. `-` writes the identity to stdout and the steps to stderr, and writes no Grok Bot message. |
 | `-format` | `env` | `env` (shell-sourceable) or `json` (one object, usable as an MCP server `env` block). Anything else is a usage error. |
-| `-expires` | none | `YYYY-MM-DD` (00:00 UTC), an RFC 3339 time, or a duration such as `90d` or `36h`. Adds a `created_at<` condition, so the relay stops admitting the agent at that time. Must be in the future and no later than 2106-02-07, the last time a NIP-OA condition can express. |
+| `-expires` | `3y` | Expiry of a new identity: `YYYY-MM-DD` (00:00 UTC), an RFC 3339 time, or a duration such as `3y`, `90d` or `36h`. Adds a `created_at<` condition, so the relay stops admitting the agent at that time. Must be in the future and no later than 2106-02-07, the last time a NIP-OA condition can express. Ignored when the identity is kept. |
 
-The owner key is read from a hidden prompt on a terminal, from one line of piped stdin, or from `$BUZZ_OWNER_PRIVATE_KEY`. It may be an `nsec1…` or 64 hex characters.
+The owner key is needed only when a new identity is created. It is read from a hidden prompt on a terminal, from one line of piped stdin, or from `$BUZZ_OWNER_PRIVATE_KEY`, and may be an `nsec1…` or 64 hex characters.
+
+### `gobuzzkey remove`
+
+Undoes `new` and is safe to run again: with `-channel` the agent leaves that channel, then the identity file and its Grok Bot message are deleted. If the agent cannot leave (the relay is down, say), both files are kept so you can try again; run without `-channel` to delete them anyway. Remove the `buzz` MCP server from the Grok Bot yourself: it holds a copy of the agent key.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `-env` | `buzz-agent.env` | Identity file to delete. |
+| `-channel` | none | Channel name or ID the agent leaves first. |
 
 ### `gobuzzkey verify`
 
@@ -93,7 +115,12 @@ An identity without `BUZZ_AUTH_TAG` is valid too. It describes an agent the rela
 
 ## What the relay must allow
 
-The owner key, yours, must be a member of the relay. The relay must run with `BUZZ_ALLOW_NIP_OA_AUTH=true`, which is off by default in Buzz. If it is off, `check` exits with status 5 and `RELAY_MEMBERSHIP_REQUIRED`. The operator then either enables it or adds the agent npub as a relay member, in which case the agent works without the auth tag. Relay access and channel access are separate: the agent also has to be added to each private channel it should use.
+A relay that admits everyone (Buzz without `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`) needs nothing. A members-only relay admits the agent when the operator does one of these:
+
+- runs the relay with `BUZZ_ALLOW_NIP_OA_AUTH=true`, which is off by default in Buzz. The owner key, yours, must be a relay member;
+- adds the agent npub as a relay member, in which case the agent works without the auth tag.
+
+Until then `new` and `check` exit with status 5 and `RELAY_MEMBERSHIP_REQUIRED`, and `new` prints both options with the npubs filled in. Relay access and channel access are separate: the agent also has to be a member of each channel it should use. It can join an open channel itself; a private one needs a member to add it.
 
 ## Exit status
 
@@ -102,7 +129,7 @@ The owner key, yours, must be a member of the relay. The relay must run with `BU
 | 0 | Success. |
 | 1 | Unclassified failure. |
 | 2 | Bad command line. |
-| 3 | Invalid input: a key, attestation, condition, relay URL or identity file, or the destination exists. |
+| 3 | Invalid input: a key, attestation, condition, relay URL or identity file, or the identity file is for another relay. |
 | 4 | Trust failure: the signature does not verify, owner and agent are the same key, or the attestation expired. |
 | 5 | The relay refused the agent: not admitted (`RELAY_MEMBERSHIP_REQUIRED`) or NIP-98 rejected (`RELAY_UNAUTHORIZED`). |
 | 6 | The relay rejected a request or is unavailable. |
@@ -111,18 +138,19 @@ The owner key, yours, must be a member of the relay. The relay must run with `BU
 
 ## Security
 
-Your owner key is used for one signature and never written anywhere. The agent key is written only to the destination you choose, with mode 0600, and gobuzzkey never prints it. A secret key prints as `nsec1…(redacted)` under every `fmt` verb, also inside other structs, and a lint rule confines revealing one to the identity store. Text that comes from the relay, such as channel names and error messages, has control characters escaped before it reaches your terminal.
+Your owner key is used for one signature and never written anywhere. The agent key is written only to the identity file and its Grok Bot message, both with mode 0600, and gobuzzkey never prints it. A secret key prints as `nsec1…(redacted)` under every `fmt` verb, also inside other structs, and a lint rule confines revealing one to the identity store. Text that comes from the relay, such as channel names and error messages, has control characters escaped before it reaches your terminal.
 
-An attestation cannot be withdrawn once issued. The relay keeps admitting the agent until the attestation expires or you stop being a relay member. Removing the agent from a channel cuts its access to that channel at once, but not to the relay. So prefer `-expires`, and ask the relay operator to block the agent's key if it must be shut out before then.
+An attestation cannot be withdrawn once issued. The relay keeps admitting the agent until the attestation expires or you stop being a relay member. Removing the agent from a channel cuts its access to that channel at once, but not to the relay. That is why `new` sets a 3-year expiry unless you pass `-expires`. Ask the relay operator to block the agent's key if it must be shut out before then.
 
 ## Development
 
 The repository follows the same layout and gates as [gobridge](https://github.com/mariotoffia/gobridge): hexagonal layers, DDD bounded contexts, machine-enforced architecture and two commands that decide when work is done.
 
 ```sh
-make install   # pinned lint tools
-make lint      # every static check; reports under reports/
-make test      # unit tests with the race detector
+make install       # pinned lint tools
+make install-cli   # build gobuzzkey from this checkout into $(go env GOPATH)/bin
+make lint          # every static check; reports under reports/
+make test          # unit tests with the race detector
 ```
 
 Start with [AGENTS.md](AGENTS.md), then [ARCHITECTURE.md](ARCHITECTURE.md), [DDD.md](DDD.md) and [UBIQUITOUS.md](UBIQUITOUS.md). [DEVELOPMENT.md](DEVELOPMENT.md) covers local setup and [RELEASE.md](RELEASE.md) how releases are cut.

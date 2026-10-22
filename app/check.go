@@ -54,12 +54,9 @@ type CheckReport struct {
 // Check lists the channels the agent can see, then optionally reads and posts
 // to one. An expired attestation is reported before any network call.
 func (c *Checker) Check(ctx context.Context, id identity.AgentIdentity, r ports.Relay, req CheckRequest) (CheckReport, error) {
-	if att, ok := id.Attestation(); ok && !att.AdmittedAt(c.clock.Now()) {
-		exp, _ := att.Expiry()
-		return CheckReport{}, shared.New(shared.CodeAttestationExpired,
-			"attestation expired at "+exp.Format("2006-01-02T15:04:05Z07:00"))
+	if err := c.admissible(id); err != nil {
+		return CheckReport{}, err
 	}
-
 	metas, err := r.Query(ctx, relay.MetadataFilter(channelLimit))
 	if err != nil {
 		return CheckReport{}, err
@@ -94,6 +91,17 @@ func (c *Checker) Check(ctx context.Context, id identity.AgentIdentity, r ports.
 	return report, err
 }
 
+// admissible fails with ATTESTATION_EXPIRED when the relay would refuse the
+// attestation now, so an expired identity never reaches the network.
+func (c *Checker) admissible(id identity.AgentIdentity) error {
+	if att, ok := id.Attestation(); ok && !att.AdmittedAt(c.clock.Now()) {
+		exp, _ := att.Expiry()
+		return shared.New(shared.CodeAttestationExpired,
+			"attestation expired at "+exp.Format("2006-01-02T15:04:05Z07:00"))
+	}
+	return nil
+}
+
 // channelsFrom reads kind-39000 events into channels sorted by name, then ID,
 // so the order is stable when names repeat.
 func channelsFrom(metas []nostr.Event) []relay.Channel {
@@ -115,7 +123,13 @@ func channelsFrom(metas []nostr.Event) []relay.Channel {
 
 // post signs a kind-9 message to ch and publishes it.
 func (c *Checker) post(ctx context.Context, id identity.AgentIdentity, r ports.Relay, ch relay.Channel, text string) (relay.WriteResult, error) {
-	ev, err := c.sign(id, nostr.KindChannelMessage, ch.MessageTags(), text)
+	return c.publish(ctx, id, r, nostr.KindChannelMessage, ch, text)
+}
+
+// publish signs an event of kind addressed to ch as the agent and publishes
+// it. An event the relay does not accept is RELAY_REJECTED.
+func (c *Checker) publish(ctx context.Context, id identity.AgentIdentity, r ports.Relay, kind int, ch relay.Channel, content string) (relay.WriteResult, error) {
+	ev, err := c.sign(id, kind, ch.GroupTags(), content)
 	if err != nil {
 		return relay.WriteResult{}, err
 	}
@@ -124,7 +138,8 @@ func (c *Checker) post(ctx context.Context, id identity.AgentIdentity, r ports.R
 		return relay.WriteResult{}, err
 	}
 	if !res.Accepted {
-		return res, shared.New(shared.CodeRelayRejected, "relay did not accept the message: "+res.Message)
+		return res, shared.New(shared.CodeRelayRejected,
+			"relay did not accept the kind "+strconv.Itoa(kind)+" event: "+res.Message)
 	}
 	return res, nil
 }

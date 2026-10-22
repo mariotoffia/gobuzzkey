@@ -123,8 +123,8 @@ func TestCheck_RelayWithoutNIPOAExitsWithAdmissionHint(t *testing.T) {
 	r := fakerelay.Start(fakerelay.WithClock(clocktest.At(now)), fakerelay.WithMembers(ownerPub))
 	defer r.Close()
 	path := filepath.Join(t.TempDir(), "agent.env")
-	if res := invoke(t, map[string]string{envOwnerSecret: ownerSK.Nsec()}, "new", "-relay", r.URL(), "-out", path); res.code != exitOK {
-		t.Fatalf("new: %s", res.stderr)
+	if res := invoke(t, map[string]string{envOwnerSecret: ownerSK.Nsec()}, "new", "-relay", r.URL(), "-out", path); res.code != exitAdmission {
+		t.Fatalf("new: %d %s", res.code, res.stderr)
 	}
 	res := invoke(t, nil, "check", "-env", path)
 	if res.code != exitAdmission || !strings.Contains(res.stderr, "BUZZ_ALLOW_NIP_OA_AUTH") {
@@ -132,35 +132,40 @@ func TestCheck_RelayWithoutNIPOAExitsWithAdmissionHint(t *testing.T) {
 	}
 }
 
-func TestNew_RefusesToOverwriteWithoutAskingForTheSecret(t *testing.T) {
+func TestNew_NeverOverwritesAnUnreadableFileNorAsksForTheSecret(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.env")
 	if err := os.WriteFile(path, []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	res := invoke(t, nil, "new", "-relay", "wss://relay.example", "-out", path)
-	if res.code != exitInput || !strings.Contains(res.stderr, "IDENTITY_EXISTS") || strings.Contains(res.stderr, "Owner secret") {
+	if res.code != exitInput || !strings.Contains(res.stderr, "IDENTITY_INVALID") || strings.Contains(res.stderr, "Owner secret") {
 		t.Fatalf("new: %d %s", res.code, res.stderr)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "keep" {
+		t.Fatalf("file overwritten: %q", b)
 	}
 }
 
 func TestNew_DashWritesJSONToStdoutAndStatusToStderr(t *testing.T) {
-	ownerSK, _ := owner(t)
-	res := invoke(t, map[string]string{envOwnerSecret: ownerSK.Nsec()}, "new", "-relay", "wss://r.example", "-out", "-", "-format", "json")
+	ownerSK, ownerPub := owner(t)
+	r := nipoaRelay(t, ownerPub)
+	res := invoke(t, map[string]string{envOwnerSecret: ownerSK.Nsec()}, "new", "-relay", r.URL(), "-out", "-", "-format", "json")
 	if res.code != exitOK {
 		t.Fatalf("new: %s", res.stderr)
 	}
 	if !strings.HasPrefix(strings.TrimSpace(res.stdout), "{") || !strings.Contains(res.stdout, `"BUZZ_AUTH_TAG"`) {
 		t.Fatalf("stdout = %s", res.stdout)
 	}
-	if !strings.Contains(res.stderr, "identity written to stdout") {
+	if !strings.Contains(res.stderr, "identity  written to stdout") || strings.Contains(res.stderr, "grok") {
 		t.Fatalf("stderr = %s", res.stderr)
 	}
 }
 
 func TestVerify_TagModeAndSignatureFailure(t *testing.T) {
-	ownerSK, _ := owner(t)
+	ownerSK, ownerPub := owner(t)
+	r := nipoaRelay(t, ownerPub)
 	var out bytes.Buffer
-	res := invoke(t, map[string]string{envOwnerSecret: ownerSK.Nsec()}, "new", "-relay", "wss://r.example", "-out", "-")
+	res := invoke(t, map[string]string{envOwnerSecret: ownerSK.Nsec()}, "new", "-relay", r.URL(), "-out", "-")
 	out.WriteString(res.stdout)
 	var tag, agent string
 	for _, line := range strings.Split(out.String(), "\n") {
@@ -190,6 +195,9 @@ func TestRun_UsageErrors(t *testing.T) {
 		{"check", "-send", "hi"},
 		{"new", "-nope"},
 		{"new", "-relay", "wss://r.example", "-format", "yaml"},
+		{"new", "-relay", "wss://r.example", "-format", "grok"},
+		{"remove", "extra"},
+		{"remove", "-nope"},
 	} {
 		if res := invoke(t, nil, args...); res.code != exitUsage {
 			t.Errorf("%v: exit %d", args, res.code)
@@ -265,6 +273,8 @@ func TestParseExpiry(t *testing.T) {
 		"2027-10-31":           time.Date(2027, 10, 31, 0, 0, 0, 0, time.UTC),
 		"2027-10-31T12:00:00Z": time.Date(2027, 10, 31, 12, 0, 0, 0, time.UTC),
 		"90d":                  base.Add(90 * 24 * time.Hour),
+		"3y":                   base.AddDate(3, 0, 0),
+		"50y":                  base.AddDate(50, 0, 0),
 		"36h":                  base.Add(36 * time.Hour),
 		"2106-02-07T06:28:15Z": time.Unix(4294967295, 0).UTC(),
 	}
@@ -275,7 +285,9 @@ func TestParseExpiry(t *testing.T) {
 		}
 	}
 	for _, in := range []string{
-		"tomorrow", "0d", "-5h", "31/10/2027",
+		"tomorrow", "0d", "-5h", "31/10/2027", "0y", "-1y", "1.5y",
+		"101y",                 // beyond the year cap
+		"90y",                  // after 2106-02-07, as a number of years
 		"213594d",              // would overflow time.Duration
 		"36501d",               // beyond the day cap
 		"30000d",               // after 2106-02-07, the last created_at NIP-OA can express

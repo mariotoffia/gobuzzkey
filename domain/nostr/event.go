@@ -18,10 +18,16 @@ import (
 const (
 	// KindChannelMessage is a NIP-29 group (Buzz channel) chat message.
 	KindChannelMessage = 9
+	// KindJoinRequest asks to join a NIP-29 group (Buzz channel).
+	KindJoinRequest = 9021
+	// KindLeaveRequest asks to leave a NIP-29 group (Buzz channel).
+	KindLeaveRequest = 9022
 	// KindHTTPAuth is a NIP-98 HTTP authorization event.
 	KindHTTPAuth = 27235
 	// KindChannelMetadata is NIP-29 group (Buzz channel) metadata.
 	KindChannelMetadata = 39000
+	// KindChannelMembers is a NIP-29 group member list, signed by the relay.
+	KindChannelMembers = 39002
 )
 
 // Event is a signed Nostr event as it travels on the wire.

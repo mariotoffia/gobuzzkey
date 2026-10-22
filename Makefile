@@ -4,7 +4,7 @@
 #   make lint   every static check; one report per checker under reports/
 #   make test   unit tests (race) + test timing audit
 
-.PHONY: all build test test-live fuzz lint lint-fix check vulncheck dist release clean tidy install help
+.PHONY: all build test test-live fuzz lint lint-fix check vulncheck dist release clean tidy install install-cli help
 .PHONY: audit-test-timings dupl-report goconst-report
 
 # Tool pins. CI installs the same versions (.github/workflows/ci.yml).
@@ -142,6 +142,10 @@ install: ## Install the pinned development tools
 	$(TOOL_ENV) go install github.com/mibk/dupl@$(DUPL_VERSION)
 	$(TOOL_ENV) go install github.com/jgautheron/goconst/cmd/goconst@$(GOCONST_VERSION)
 	$(TOOL_ENV) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+
+install-cli: ## Build gobuzzkey from this checkout and install it into $(go env GOPATH)/bin (or GOBIN)
+	go install $(CMD)
+	@echo "installed: $$(go env GOBIN | grep . || echo $$(go env GOPATH)/bin)/$(BIN)"
 
 help: ## Show this help
 	@echo "gobuzzkey"

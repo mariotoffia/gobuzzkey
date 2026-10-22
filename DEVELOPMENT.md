@@ -20,6 +20,7 @@ make check     # build + lint + test
 | Target | Does |
 |---|---|
 | `make build` | Builds `./gobuzzkey.out`. |
+| `make install-cli` | Builds the checkout and installs `gobuzzkey` into `$(go env GOPATH)/bin` (or `GOBIN`), so it runs from any directory. |
 | `make test` | Unit tests with the race detector, plus the test timing audit. |
 | `make test-live` | Runs `tests/live` against the relay in `GOBUZZKEY_LIVE_ENV`. |
 | `make lint` | Every static check; see [LINT.md](LINT.md). |

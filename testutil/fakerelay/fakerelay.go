@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,11 +38,14 @@ const (
 	routeEvents = "/events"
 )
 
-// Channel is a channel the fake relay serves.
+// Channel is a channel the fake relay serves. Like Buzz, an open channel is
+// visible to every admitted caller and joinable with a kind-9021 request; a
+// private one is visible to its members only. Only members may post.
 type Channel struct {
 	ID      string
 	Name    string
-	Members []key.PublicKey // agents that can see and post to the channel
+	Private bool
+	Members []key.PublicKey
 }
 
 // Request is a recorded request.
@@ -120,6 +124,16 @@ func (r *Relay) Requests() []Request {
 	return append([]Request(nil), r.requests...)
 }
 
+// Members returns a copy of the members of channel id.
+func (r *Relay) Members(id string) []key.PublicKey {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if ch := r.channel(id); ch != nil {
+		return append([]key.PublicKey(nil), ch.Members...)
+	}
+	return nil
+}
+
 // Messages returns a copy of the accepted kind-9 events.
 func (r *Relay) Messages() []nostr.Event {
 	r.mu.Lock()
@@ -139,8 +153,9 @@ func (r *Relay) handleQuery(w http.ResponseWriter, req *http.Request) {
 	}
 	var kinds []int
 	_ = json.Unmarshal(filters[0]["kinds"], &kinds)
-	var hs []string
+	var hs, ds []string
 	_ = json.Unmarshal(filters[0]["#h"], &hs)
+	_ = json.Unmarshal(filters[0]["#d"], &ds)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -150,7 +165,17 @@ func (r *Relay) handleQuery(w http.ResponseWriter, req *http.Request) {
 		case nostr.KindChannelMetadata:
 			for _, ch := range r.channels {
 				if ch.visibleTo(caller) {
-					out = append(out, nostr.Event{Kind: k, Tags: [][]string{{"d", ch.ID}, {"name", ch.Name}}})
+					out = append(out, nostr.Event{Kind: k, Tags: [][]string{{"d", ch.ID}, {"name", ch.Name}, {ch.visibility()}}})
+				}
+			}
+		case nostr.KindChannelMembers:
+			for _, ch := range r.channels {
+				if contains(ds, ch.ID) && ch.visibleTo(caller) {
+					ev := nostr.Event{Kind: k, Tags: [][]string{{"d", ch.ID}}}
+					for _, m := range ch.Members {
+						ev.Tags = append(ev.Tags, []string{"p", m.Hex(), "member"})
+					}
+					out = append(out, ev)
 				}
 			}
 		case nostr.KindChannelMessage:
@@ -181,12 +206,28 @@ func (r *Relay) handleEvents(w http.ResponseWriter, req *http.Request) {
 	h, _ := ev.TagValue("h")
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if ev.PubKey != caller.Hex() || !r.channelVisible(h, caller) {
+	ch := r.channel(h)
+	switch {
+	case ev.PubKey != caller.Hex():
+		writeResult(w, ev.ID, false, "restricted: event author is not the authenticated caller")
+	case ch == nil:
+		writeResult(w, ev.ID, false, "invalid: channel not found")
+	case ev.Kind == nostr.KindJoinRequest && ch.Private && !ch.isMember(caller):
+		writeResult(w, ev.ID, false, "restricted: channel is private")
+	case ev.Kind == nostr.KindJoinRequest:
+		if !ch.isMember(caller) {
+			ch.Members = append(ch.Members, caller)
+		}
+		writeResult(w, ev.ID, true, "")
+	case ev.Kind == nostr.KindLeaveRequest:
+		ch.Members = slices.DeleteFunc(ch.Members, func(k key.PublicKey) bool { return k == caller })
+		writeResult(w, ev.ID, true, "")
+	case !ch.isMember(caller):
 		writeResult(w, ev.ID, false, "restricted: not a channel member")
-		return
+	default:
+		r.messages = append(r.messages, ev)
+		writeResult(w, ev.ID, true, "")
 	}
-	r.messages = append(r.messages, ev)
-	writeResult(w, ev.ID, true, "")
 }
 
 // admit verifies NIP-98 and membership. It writes the error response itself.
@@ -297,23 +338,32 @@ func (r *Relay) isMember(k key.PublicKey) bool {
 	return r.members[k]
 }
 
-// channelVisible must be called with r.mu held.
-func (r *Relay) channelVisible(id string, caller key.PublicKey) bool {
-	for _, ch := range r.channels {
-		if ch.ID == id {
-			return ch.visibleTo(caller)
+// channel must be called with r.mu held.
+func (r *Relay) channel(id string) *Channel {
+	for i := range r.channels {
+		if r.channels[i].ID == id {
+			return &r.channels[i]
 		}
 	}
-	return false
+	return nil
 }
 
-func (ch Channel) visibleTo(k key.PublicKey) bool {
-	for _, m := range ch.Members {
-		if m == k {
-			return true
-		}
+// channelVisible must be called with r.mu held.
+func (r *Relay) channelVisible(id string, caller key.PublicKey) bool {
+	ch := r.channel(id)
+	return ch != nil && ch.visibleTo(caller)
+}
+
+func (ch Channel) visibleTo(k key.PublicKey) bool { return !ch.Private || ch.isMember(k) }
+
+func (ch Channel) isMember(k key.PublicKey) bool { return slices.Contains(ch.Members, k) }
+
+// visibility is the kind-39000 flag tag Buzz publishes.
+func (ch Channel) visibility() string {
+	if ch.Private {
+		return "private"
 	}
-	return false
+	return "public"
 }
 
 func contains(list []string, v string) bool {

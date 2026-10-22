@@ -7,6 +7,37 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 
 ## [Unreleased]
 
+### Added
+
+- `gobuzzkey new -channel <name>` joins the channel as the agent and reads it,
+  so one command sets up an agent. A private channel cannot be joined by the
+  agent itself; `new` prints the npub to add in Buzz Desktop.
+- `new` writes `buzz-agent.grok.txt` next to the identity: the whole message to
+  paste into a Grok Bot chat, with the three variables filled in and the
+  polling routine. It holds the agent key and has mode 0600. The MCP server
+  it installs is pinned to a reviewed buzz-grokbot commit.
+- When the relay refuses the agent, `new` prints what the relay admin has to
+  change, with the owner and agent npubs filled in.
+- `gobuzzkey remove [-channel <name>]` takes the agent out of the channel and
+  deletes the identity file and its Grok Bot message.
+- `-expires` accepts years, such as `5y`.
+- The owner-key prompt, and the error when the key is missing or invalid, say
+  where to find it: Buzz Desktop, Settings, Profile, Private key.
+- `make install-cli` builds the checkout and installs `gobuzzkey` into
+  `$(go env GOPATH)/bin`.
+
+### Changed
+
+- `new` can be run again. It keeps an existing identity file for the same
+  relay instead of failing with `IDENTITY_EXISTS`, asks for your key only when
+  it creates a new identity, and skips a channel the agent already belongs to.
+  An identity for another relay still stops it; run `remove` first.
+- `new` now signs in to the relay after writing the identity. It exits with
+  status 5 when the relay refuses the agent (before, only `check` did), and
+  with status 7 when the channel is private or not visible.
+- New identities expire after 3 years unless you pass `-expires`. Before, an
+  identity without `-expires` never expired.
+
 ## [0.1.0] - 2026-10-22
 
 ### Added

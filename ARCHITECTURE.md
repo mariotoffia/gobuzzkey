@@ -103,6 +103,8 @@ sequenceDiagram
 
 Every check that can fail without the owner's key runs before the owner's key is requested: relay URL, expiry, and whether the destination already exists.
 
+The command `new` mints only when `-out` does not exist yet. Otherwise it opens the file and keeps it when `Inspector.Reusable` accepts it (same relay, attestation not expired), so a second run never asks for the owner's key. It then writes the Grok Bot message through the identity store, checks admission and, with `-channel`, joins and reads the channel (ADR-0004).
+
 ### Inspect (`app.Inspector`)
 
 `Open` reads a stored record, derives the agent public key from the secret key and verifies the owner signature against that key. A tag issued for a different agent therefore fails as `SIGNATURE_INVALID`. `VerifyTag` does the same for a bare tag and a public key, with no secret. `Inspect` reports whether a relay would admit the attestation now.
@@ -110,6 +112,10 @@ Every check that can fail without the owner's key runs before the owner's key is
 ### Check (`app.Checker`)
 
 An expired attestation is rejected before any network call. The checker then queries kind-39000 channel metadata. A successful answer means the relay admitted the agent. A channel reference resolves by exact ID first, then by name; a name shared by several channels is refused with their IDs (`CHANNEL_AMBIGUOUS`), never guessed. It then reads the channel's recent kind-9 messages and, with `-send`, publishes a signed kind-9 message.
+
+### Join and leave (`app.Checker`)
+
+`Join` and `Leave` resolve the channel like `Check`, then read its kind-39002 member list. `Join` publishes a kind-9021 join request signed by the agent only when the agent is not listed; a private channel the agent is not in is `CHANNEL_NOT_VISIBLE` without any request, because Buzz lets only a member add someone to it. `Leave` publishes a kind-9022 leave request only when the agent is listed. Both refuse an expired attestation before the first relay call. The owner key is never used: it signs the attestation and nothing else.
 
 ## 4. Wire contracts
 
@@ -145,7 +151,7 @@ An attested agent attaches its auth tag to every event the attestation covers, a
 | Secret | Where it exists | Where it may go |
 |---|---|---|
 | Owner key | `SecretPrompt` → `Minter.Mint` stack | one `Signer.Sign` call; never stored |
-| Agent key | generated in `Minter.Mint`, held in `AgentIdentity` | `IdentityStore.Save`; the signer, for NIP-98 and events |
+| Agent key | generated in `Minter.Mint`, held in `AgentIdentity` | `IdentityStore.Save` (identity file and Grok Bot message); the signer, for NIP-98 and events |
 
 `key.SecretKey` prints `nsec1…(redacted)` under every `fmt` verb and encodes to `{}` in JSON. It keeps its bytes inside a closure, because fmt cannot call `Format` on an unexported field: a struct holding a plain byte array, or even a pointer to one, would print the raw bytes under `%v` or `%s`. A func value is the one kind fmt only prints as an address. Only `adapters/store/envfile` (to serialize) and `adapters/crypto/secp256k1` (to sign) may call `Nsec` or `Bytes` (forbidigo). Output goes through injected writers, so a secret can only reach a terminal through code that deliberately prints it. Text from the relay or a file (channel names, error bodies, rejection messages) passes through `shared.Printable` before it is shown, so it cannot carry terminal escape sequences. Identity files are created with `O_EXCL` and mode 0600 and never overwritten.
 

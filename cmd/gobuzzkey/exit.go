@@ -28,6 +28,12 @@ const maxErrorOutput = 2000
 // errUsage marks a command-line error already explained to the user.
 var errUsage = errors.New("usage")
 
+// explained marks an error the command has already reported in its own
+// words; report prints nothing more and exits with the error's status.
+type explained struct{ error }
+
+func (e explained) Unwrap() error { return e.error }
+
 func exitCode(err error) int {
 	if err == nil {
 		return exitOK
@@ -77,11 +83,15 @@ func hint(err error) string {
 	case shared.CodeChannelNotVisible:
 		return "Add the agent npub to the channel in Buzz (channel members, \"paste a public key\"), then run check again."
 	case shared.CodeAttestationExpired:
-		return "Mint a new identity with gobuzzkey new and replace the agent's BUZZ_PRIVATE_KEY and BUZZ_AUTH_TAG."
+		return "Run gobuzzkey remove, then gobuzzkey new, and give the agent the new BUZZ_PRIVATE_KEY and BUZZ_AUTH_TAG."
 	case shared.CodeIdentityExists:
-		return "gobuzzkey never overwrites an identity. Pass -out with another path."
+		return "gobuzzkey never overwrites an identity. Run gobuzzkey remove to delete it, or pass -out with another path."
 	case shared.CodeChannelAmbiguous:
 		return "Channel names are not unique in Buzz. Pass the channel ID with -channel."
+	case shared.CodeSecretUnavailable:
+		return "Copy your Buzz private key from Buzz Desktop: Settings, Profile, Private key (it starts\n" +
+			"with nsec1). Run the command again in a terminal and paste it at the hidden prompt, or\n" +
+			"set $" + envOwnerSecret + "."
 	default:
 		return ""
 	}
@@ -101,7 +111,8 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 }
 
 func report(e env, err error) int {
-	if err == nil || errors.Is(err, errUsage) || errors.Is(err, flag.ErrHelp) {
+	var done explained
+	if err == nil || errors.Is(err, errUsage) || errors.Is(err, flag.ErrHelp) || errors.As(err, &done) {
 		return exitCode(err)
 	}
 	_, _ = fmt.Fprintln(e.stderr, "error:", shared.Printable(err.Error(), maxErrorOutput))

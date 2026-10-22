@@ -15,7 +15,10 @@ import (
 	"github.com/mariotoffia/gobuzzkey/ports"
 )
 
-const promptText = "Owner secret key (nsec1… or hex, input hidden): "
+// promptText tells the owner where the key is before asking for it.
+const promptText = "Your Buzz private key signs the agent's attestation once and is never stored.\n" +
+	"Copy it from Buzz Desktop: Settings, Profile, Private key (it starts with nsec1).\n" +
+	"Owner secret key (nsec1… or hex, input hidden): "
 
 // Prompt implements ports.SecretPrompt.
 type Prompt struct {

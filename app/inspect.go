@@ -69,6 +69,26 @@ func (i *Inspector) Open(ctx context.Context, src ports.IdentitySource) (identit
 	return identity.NewAttested(relayURL, secret, agent, tag)
 }
 
+// Reusable reports whether an opened identity can serve relayURL now: it is
+// for the same relay and its attestation has not expired. An identity for
+// another relay is IDENTITY_EXISTS, because a new one would replace it.
+func (i *Inspector) Reusable(id identity.AgentIdentity, relayURL string) error {
+	want, err := relay.ParseURL(relayURL)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(want.String(), id.Relay().String()) {
+		return shared.New(shared.CodeIdentityExists,
+			"the identity is for relay "+id.Relay().String()+", not "+want.String())
+	}
+	if att, ok := id.Attestation(); ok && !att.AdmittedAt(i.clock.Now()) {
+		exp, _ := att.Expiry()
+		return shared.New(shared.CodeAttestationExpired,
+			"the identity's attestation expired at "+exp.Format(time.RFC3339))
+	}
+	return nil
+}
+
 // Inspect reports on an opened identity.
 func (i *Inspector) Inspect(id identity.AgentIdentity) Report {
 	r := Report{Agent: id.Agent(), Relay: id.Relay()}

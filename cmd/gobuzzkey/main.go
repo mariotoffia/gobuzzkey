@@ -17,9 +17,10 @@ import (
 const usage = `gobuzzkey — owner-attested agent identities for Buzz relays
 
 Usage:
-  gobuzzkey new     -relay <url> [-out buzz-agent.env|-] [-format env|json] [-expires <when>]
+  gobuzzkey new     -relay <url> [-channel <name|id>] [-out buzz-agent.env|-] [-format env|json] [-expires 3y]
   gobuzzkey verify  [-env buzz-agent.env] | -tag <json> -agent <npub|hex>
   gobuzzkey check   [-env buzz-agent.env] [-channel <name|id>] [-send <text>] [-history <n>]
+  gobuzzkey remove  [-env buzz-agent.env] [-channel <name|id>]
   gobuzzkey version
 
 Run "gobuzzkey <command> -h" for the flags of one command.
@@ -63,6 +64,8 @@ func run(ctx context.Context, e env) int {
 		return report(e, cmdVerify(ctx, e))
 	case "check":
 		return report(e, cmdCheck(ctx, e))
+	case "remove":
+		return report(e, cmdRemove(ctx, e))
 	case "version", "-version", "--version":
 		_, _ = fmt.Fprintln(e.stdout, "gobuzzkey", version())
 		return exitOK

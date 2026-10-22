@@ -31,12 +31,12 @@ Compile errors and import cycles belong to the compiler. Do not claim a file wil
 
 ## Step 3: what to check
 
-1. **Secrets stay secret, output stays inert.** No new path writes a secret key to output, a log, an error message, a URL or a file other than the identity store. No flag accepts a secret key as an argument. Relay- or file-supplied text shown to the user goes through `shared.Printable`.
+1. **Secrets stay secret, output stays inert.** No new path writes a secret key to output, a log, an error message, a URL or a file other than through the identity store (the identity file and the Grok Bot message, ADR-0004). No flag accepts a secret key as an argument. Relay- or file-supplied text shown to the user goes through `shared.Printable`.
 2. **Wire contracts hold.** The NIP-OA preimage is `"nostr:agent-auth:" + agent-hex + ":" + conditions`, conditions are kept verbatim, wire hex is lowercase, the tag has exactly four elements. NIP-98 events carry `u` (absolute URL exactly as requested), `method`, `nonce` and `payload` for bodies. Event IDs use `nostr.Serialize`, never `encoding/json`. Relay URLs carry no path.
-3. **Fail closed.** Malformed keys, tags, conditions, URLs and identity files are rejected with a classified `shared.Code`, never defaulted. An existing identity file is never overwritten.
-4. **Order of operations in mint.** Everything that can fail without the owner's key (relay URL, expiry, destination) is checked before the key is requested.
+3. **Fail closed.** Malformed keys, tags, conditions, URLs and identity files are rejected with a classified `shared.Code`, never defaulted. An existing identity file is never overwritten; `new` keeps it only when `Inspector.Reusable` accepts it.
+4. **Order of operations in mint.** Everything that can fail without the owner's key (relay URL, expiry, destination) is checked before the key is requested. The owner key signs the attestation and nothing else: channel joins and leaves are signed by the agent (ADR-0004).
 5. **Codes are complete.** A new `shared.Code` has an exit status in `cmd/gobuzzkey/exit.go`, a row in `UBIQUITOUS.md` and in the README's exit-status table, and `TestExitCode_MapsEveryErrorCode` lists it.
-6. **The fake relay matches Buzz.** A change to admission behaviour in `adapters/relay/buzzhttp` is mirrored in `testutil/fakerelay`, and both match `ARCHITECTURE.md §4`.
+6. **The fake relay matches Buzz.** A change to admission behaviour in `adapters/relay/buzzhttp` is mirrored in `testutil/fakerelay`, and both match `ARCHITECTURE.md §4`. The fake also keeps Buzz's channel rules: open channels are visible to every admitted caller and joinable, private ones only to members; only members post.
 7. **Docs and code agree.** README flags, defaults and exit statuses match the code. A user-visible change has an entry under `## [Unreleased]` in `CHANGELOG.md`.
 8. **Tests pin behaviour.** A bug fix comes with a test that fails without it. Specification vectors are not edited (`TESTS.md §4`).
 
